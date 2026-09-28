@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.token_utils import truncate_chunks_to_budget
+from app.defense.ai_guard import evaluate_prompt
 from app.defense.nemo_guardrails import get_guardrails_service
 from app.defense.pipeline import defense_pipeline
 from app.models import Coupon, Order, Product, User
@@ -97,6 +98,20 @@ async def _prepare_chat(
             if not nemo_result.allowed:
                 logger.info("NeMo Guardrails blocked input: %s", nemo_result.blocked_reason)
                 return ChatResponse(reply=nemo_result.message, kb_used=False, kb_context_count=0)
+
+    ai_guard_settings = get_settings().defense
+    if ai_guard_settings.ai_guard_enabled:
+        verdict = await evaluate_prompt(
+            messages=[{"role": "user", "content": user_message}],
+            block=ai_guard_settings.ai_guard_block,
+            source="chat",
+        )
+        if not verdict.allowed and ai_guard_settings.ai_guard_block:
+            return ChatResponse(
+                reply="I can't help with that request.",
+                kb_used=False,
+                kb_context_count=0,
+            )
 
     lab_prompt = load_lab_prompt(body.lab_id) if body.lab_id else None
     system_prompt = lab_prompt if lab_prompt else load_prompt(level)
@@ -212,6 +227,13 @@ async def chat(
         options=prepared["options"],
     )
     reply = reply or "I'm sorry, I couldn't process that request."
+
+    if get_settings().defense.ai_guard_enabled:
+        await evaluate_prompt(
+            messages=[{"role": "assistant", "content": reply}],
+            block=False,
+            source="chat",
+        )
 
     level = prepared["level"]
     if level >= 1:

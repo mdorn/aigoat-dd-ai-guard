@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.token_utils import truncate_chunks_to_budget
+from app.defense.ai_guard import evaluate_prompt
 from app.rag.embeddings import get_embedding_service
 from app.rag.injection_detector import detect_injection
 from app.rag.query_rewriter import rewrite_query
@@ -31,6 +32,22 @@ class RAGService:
         use_kb: bool = True,
     ) -> dict:
         is_injection, reason = detect_injection(query)
+
+        defense_settings = get_settings().defense
+        if defense_settings.ai_guard_enabled:
+            verdict = await evaluate_prompt(
+                messages=[{"role": "user", "content": query}],
+                block=defense_settings.ai_guard_block,
+                source="rag",
+            )
+            if not verdict.allowed and defense_settings.ai_guard_block:
+                return {
+                    "reply": "I can't help with that request.",
+                    "use_kb": use_kb,
+                    "injection_detected": is_injection,
+                    "injection_reason": reason if is_injection else None,
+                }
+
         base_prompt = load_rag_prompt() or "You are a helpful AI assistant for an e-commerce shop."
         if use_kb:
             rewritten = rewrite_query(query)

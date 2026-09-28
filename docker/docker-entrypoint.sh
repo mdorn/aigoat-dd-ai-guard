@@ -105,8 +105,11 @@ else
 fi
 
 # ── Step 4: Start backend ─────────────────────────────────────
+# ddtrace-run enables Datadog APM tracing (and AI Guard, when
+# DD_AI_GUARD_ENABLED=true). With no DD_* config present it is a
+# safe no-op passthrough -- traces are buffered/dropped, not errored.
 info "Starting uvicorn on port ${BACKEND_PORT:-8000}..."
-exec python -m uvicorn app.main:app \
+exec ddtrace-run python -m uvicorn app.main:app \
     --host 0.0.0.0 \
     --port "${BACKEND_PORT:-8000}" \
     --log-level info

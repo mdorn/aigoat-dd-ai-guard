@@ -45,6 +45,8 @@ class DefenseConfig(BaseModel):
     level: int = 0
     l1_confidence_threshold: float = 0.6
     l2_confidence_threshold: float = 0.3
+    ai_guard_enabled: bool = False
+    ai_guard_block: bool = False
 
 
 class RagConfig(BaseModel):

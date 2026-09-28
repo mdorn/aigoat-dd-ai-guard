@@ -30,6 +30,9 @@ chromadb>=0.4.22
 # NeMo Guardrails
 nemoguardrails>=0.10.0
 
+# Datadog (APM + AI Guard)
+ddtrace>=3.19.0
+
 # Development & Testing (install with: pip install -r requirements.txt)
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

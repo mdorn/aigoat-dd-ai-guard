@@ -16,6 +16,13 @@
 #
 #   db_data        – app database; cleared by "docker-compose down -v"
 #                    for a fresh start (re-seeds on next startup).
+#
+# DATADOG
+#   APM tracing + AI Guard are wired in but disabled by default.
+#   Copy docker/.env.example to docker/.env, fill in DD_API_KEY /
+#   DD_APP_KEY, and set DD_AI_GUARD_ENABLED=true to turn AI Guard on.
+#   The datadog-agent service starts either way; without a valid
+#   DD_API_KEY it will simply fail to report to Datadog.
 # ─────────────────────────────────────────────────────────────
 
 name: aigoat
@@ -37,6 +44,35 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+      - DD_PROCESS_AGENT_ENABLED=true
+      - DD_CONTAINER_EXCLUDE=name:datadog-agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    ports:
+      - "8126:8126"
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   backend:
     build:
       context: ..
@@ -49,12 +85,25 @@ services:
       - ../media:/app/media
       - ../guardrails:/app/guardrails
       - db_data:/app/data
+    env_file:
+      - path: .env
+        required: false
     environment:
       - CONFIG_PATH=/app/config/config.yml
       - OLLAMA_BASE_URL=http://ollama:11434
+      - DD_SERVICE=aigoat-backend
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_AGENT_HOST=datadog-agent
+      - DD_TRACE_AGENT_PORT=8126
+      - DD_LOGS_INJECTION=true
+      - DD_AI_GUARD_ENABLED=${DD_AI_GUARD_ENABLED:-false}
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_APP_KEY=${DD_APP_KEY}
     depends_on:
       ollama:
         condition: service_healthy
+      datadog-agent:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/products/', timeout=5).raise_for_status()"]
       interval: 15s
